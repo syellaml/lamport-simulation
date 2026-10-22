@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pemandu Kuliner Semarang</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #fdf3e7; color: #3b2a1a; }
+    .app { max-width: 680px; margin: 24px auto; padding: 0 12px; }
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    h1 { font-size: 22px; margin: 0; color: #b45309; }
+    .badge { font-size: 13px; padding: 4px 10px; border-radius: 12px; background: #ddd; }
+    .badge.online { background: #bbf7d0; color: #14532d; }
+    .badge.offline { background: #fecaca; color: #7f1d1d; }
+
+    #chat { background: #fff; border: 1px solid #e7d3b8; border-radius: 10px;
+            height: 340px; overflow-y: auto; padding: 12px; }
+    .bubble { max-width: 82%; padding: 9px 13px; border-radius: 14px; margin: 8px 0;
+              white-space: pre-wrap; line-height: 1.45; }
+    .user { background: #b45309; color: #fff; margin-left: auto; border-bottom-right-radius: 3px; }
+    .bot  { background: #f5e6d3; border-bottom-left-radius: 3px; }
+    .bot.error { background: #fee2e2; color: #7f1d1d; }
+
+    .chips { margin: 10px 0; }
+    .chips button { background: #fff; color: #b45309; border: 1px solid #b45309;
+                    padding: 5px 11px; margin: 0 6px 6px 0; border-radius: 14px; cursor: pointer; }
+    .kirim { display: flex; gap: 8px; }
+    .kirim input { flex: 1; padding: 11px; border: 1px solid #c9ad8a; border-radius: 8px; font-size: 15px; }
+    .kirim button { padding: 0 20px; background: #b45309; color: #fff; border: 0;
+                    border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .kirim button:disabled { background: #b8a58f; cursor: wait; }
+
+    details { margin-top: 18px; background: #fff; border: 1px solid #e7d3b8; border-radius: 10px; padding: 10px 14px; }
+    summary { cursor: pointer; font-weight: bold; }
+    .ringkas { font-size: 14px; margin: 10px 0 4px; }
+    pre { background: #2b2b2b; color: #e6e6e6; padding: 10px; border-radius: 6px;
+          font-size: 13px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+    h3 { font-size: 14px; margin: 12px 0 4px; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Pemandu Kuliner Semarang</h1>
+    <span class="badge" id="badge">cek server...</span>
+  </header>
+
+  <div id="chat">
+    <div class="bubble bot">Halo! Mau cari makanan khas Semarang apa hari ini?</div>
+  </div>
+
+  <div class="chips">
+    <button data-q="Rekomendasi makanan khas Semarang yang murah">Yang murah</button>
+    <button data-q="Oleh-oleh khas Semarang apa saja?">Oleh-oleh</button>
+    <button data-q="Makanan khas Semarang untuk sarapan">Sarapan</button>
+  </div>
+
+  <div class="kirim">
+    <input type="text" id="pesan" maxlength="500" placeholder="Tulis pertanyaan, lalu tekan Enter...">
+    <button id="btn">Kirim</button>
+  </div>
+
+  <details open>
+    <summary>Log Komunikasi Frontend ↔ Backend</summary>
+    <div class="ringkas" id="ringkas">Belum ada komunikasi. Kirim pertanyaan untuk melihat log.</div>
+    <h3>Request yang dikirim ke backend</h3>
+    <pre id="logReq">-</pre>
+    <h3>Response dari backend</h3>
+    <pre id="logRes">-</pre>
+  </details>
+</div>
+
+<script>
+  const ENDPOINT = new URL('chat.php', location.href).href;
+  const $ = (id) => document.getElementById(id);
+
+  function tambahBubble(teks, kelas) {
+    const el = document.createElement('div');
+    el.className = 'bubble ' + kelas;
+    el.textContent = teks;           // textContent: aman dari injeksi HTML
+    $('chat').appendChild(el);
+    $('chat').scrollTop = $('chat').scrollHeight;
+    return el;
+  }
+
+  async function cekServer() {
+    try {
+      const res  = await fetch(ENDPOINT + '?cek=1');
+      const data = await res.json();
+      $('badge').textContent = data.kunci_terisi ? 'server online' : 'API key belum diisi';
+      $('badge').className   = 'badge ' + (data.kunci_terisi ? 'online' : 'offline');
+    } catch (e) {
+      $('badge').textContent = 'server offline';
+      $('badge').className   = 'badge offline';
+    }
+  }
+
+  async function kirim() {
+    const teks = $('pesan').value.trim();
+    if (!teks) return;
+
+    tambahBubble(teks, 'user');
+    $('pesan').value = '';
+    $('btn').disabled = true;
+    const tunggu = tambahBubble('Sedang mencari rekomendasi...', 'bot');
+
+    const request = { pesan: teks };
+    $('logReq').textContent = 'POST ' + ENDPOINT + '\n' + JSON.stringify(request, null, 2);
+    const mulai = performance.now();
+
+    try {
+      const res    = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+      });
+      const data   = await res.json();
+      const durasi = Math.round(performance.now() - mulai);
+
+      $('logRes').textContent = 'HTTP ' + res.status + '\n' + JSON.stringify(data, null, 2);
+      $('ringkas').textContent = 'Status HTTP: ' + res.status + '  |  Waktu total: ' + durasi + ' ms';
+
+      tunggu.textContent = res.ok ? data.balasan : data.pesan_error;
+      if (!res.ok) tunggu.classList.add('error');
+    } catch (e) {
+      tunggu.textContent = 'Tidak bisa terhubung ke backend.';
+      tunggu.classList.add('error');
+      $('logRes').textContent = 'Tidak ada response (server mati atau alamat salah).';
+    }
+    $('btn').disabled = false;
+    $('chat').scrollTop = $('chat').scrollHeight;
+  }
+
+  $('btn').addEventListener('click', kirim);
+  $('pesan').addEventListener('keydown', (e) => { if (e.key === 'Enter') kirim(); });
+  document.querySelectorAll('.chips button').forEach((b) =>
+    b.addEventListener('click', () => { $('pesan').value = b.dataset.q; kirim(); }));
+
+  cekServer();
+</script>
+</body>
+</html>
